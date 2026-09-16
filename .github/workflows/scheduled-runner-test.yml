@@ -1,0 +1,23 @@
+name: Scheduled Runner Test
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  runner-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify public runner
+        run: |
+          echo "SCHEDULE_TEST=START"
+          echo "UTC: $(date -u)"
+          echo "CPU: $(nproc)"
+          free -h
+          df -h / | tail -n 1
+          sleep 60
+          echo "SCHEDULE_TEST=PASS"
