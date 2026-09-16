@@ -1,24 +1,38 @@
 name: Handoff B
 
 on:
-  workflow_run:
-    workflows: ["Handoff A"]
-    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   handoff-b:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Handoff B heartbeat
+      - name: Checkout state
+        uses: actions/checkout@v4
+
+      - name: Handoff B
         run: |
           echo "HANDOFF=B"
+          echo "EVENT=$GITHUB_EVENT_NAME"
           echo "TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "SOURCE_RUN=${{ github.event.workflow_run.id }}"
-          echo "STATE=READY_FOR_A"
+          echo "RUN=$GITHUB_RUN_ID"
+          count=$(grep '^handoff_count=' handoff-state.txt | cut -d= -f2)
+          count=$((count + 1))
+          printf 'handoff_count=%s\nlast_stage=B\nlast_run=%s\nlast_time=%s\n' "$count" "$GITHUB_RUN_ID" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" > handoff-state.txt
+          echo "COUNT=$count"
           sleep 20
           echo "B=PASS"
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add handoff-state.txt
+          git commit -m "Update handoff state from B" || exit 0
+          git push
