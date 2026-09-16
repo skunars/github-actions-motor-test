@@ -1,0 +1,37 @@
+name: Public Runner Motor Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  motor-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Runner diagnostics
+        run: |
+          echo "=== GITHUB ACTIONS PUBLIC RUNNER TEST ==="
+          echo "UTC: $(date -u)"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Runner arch: $RUNNER_ARCH"
+          echo "Runner name: $RUNNER_NAME"
+          echo "CPU: $(nproc) cores"
+          echo "Memory:"
+          free -h
+          echo "Disk:"
+          df -h / | tail -n 1
+
+      - name: Heartbeat
+        run: |
+          for i in $(seq 1 10); do
+            echo "HEARTBEAT $i/10 - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            sleep 30
+          done
+
+      - name: Test result
+        run: |
+          echo "MOTOR_TEST=PASS"
+          echo "Public standard GitHub-hosted runner completed successfully."
