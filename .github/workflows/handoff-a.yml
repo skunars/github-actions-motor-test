@@ -2,6 +2,8 @@ name: Handoff A
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
   workflow_run:
     workflows: ["Handoff B"]
     types: [completed]
@@ -11,13 +13,14 @@ permissions:
 
 jobs:
   handoff-a:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Handoff A heartbeat
         run: |
           echo "HANDOFF=A"
+          echo "EVENT=$GITHUB_EVENT_NAME"
           echo "TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo "RUN=$GITHUB_RUN_ID"
           echo "STATE=READY_FOR_B"
