@@ -1,2 +1,4 @@
-handoff_count=0
-last_stage=NONE
+handoff_count=1
+last_stage=A
+last_run=35154784644
+last_time=2026-09-16 21:53:03 UTC
