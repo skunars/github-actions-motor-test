@@ -1,0 +1,24 @@
+name: Handoff B
+
+on:
+  workflow_run:
+    workflows: ["Handoff A"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  handoff-b:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Handoff B heartbeat
+        run: |
+          echo "HANDOFF=B"
+          echo "TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "SOURCE_RUN=${{ github.event.workflow_run.id }}"
+          echo "STATE=READY_FOR_A"
+          sleep 20
+          echo "B=PASS"
