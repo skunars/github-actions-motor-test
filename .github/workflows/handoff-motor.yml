@@ -1,0 +1,44 @@
+name: Handoff Motor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: handoff-motor
+  cancel-in-progress: false
+
+jobs:
+  motor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout state
+        uses: actions/checkout@v4
+
+      - name: Continue from persisted state
+        run: |
+          stage=$(grep '^last_stage=' handoff-state.txt | cut -d= -f2)
+          count=$(grep '^handoff_count=' handoff-state.txt | cut -d= -f2)
+          count=$((count + 1))
+          if [ "$stage" = "A" ]; then next="B"; else next="A"; fi
+          echo "PREVIOUS_STAGE=$stage"
+          echo "NEXT_STAGE=$next"
+          echo "COUNT=$count"
+          echo "RUN=$GITHUB_RUN_ID"
+          echo "TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          printf 'handoff_count=%s\nlast_stage=%s\nlast_run=%s\nlast_time=%s\n' "$count" "$next" "$GITHUB_RUN_ID" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" > handoff-state.txt
+          sleep 20
+          echo "MOTOR_STAGE=$next PASS"
+
+      - name: Persist state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add handoff-state.txt
+          git commit -m "Persist handoff motor state" || exit 0
+          git push
