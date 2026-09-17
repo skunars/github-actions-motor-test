@@ -2,43 +2,76 @@ name: Handoff Motor
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: handoff-motor
   cancel-in-progress: false
 
+env:
+  WORK_MINUTES: 340
+
 jobs:
   motor:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 345
     steps:
       - name: Checkout state
         uses: actions/checkout@v4
 
-      - name: Continue from persisted state
+      - name: Start long-run motor
+        shell: bash
         run: |
+          set -euo pipefail
           stage=$(grep '^last_stage=' handoff-state.txt | cut -d= -f2)
           count=$(grep '^handoff_count=' handoff-state.txt | cut -d= -f2)
           count=$((count + 1))
           if [ "$stage" = "A" ]; then next="B"; else next="A"; fi
+
+          echo "HANDOFF_TEST=START"
           echo "PREVIOUS_STAGE=$stage"
           echo "NEXT_STAGE=$next"
           echo "COUNT=$count"
           echo "RUN=$GITHUB_RUN_ID"
-          echo "TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          printf 'handoff_count=%s\nlast_stage=%s\nlast_run=%s\nlast_time=%s\n' "$count" "$next" "$GITHUB_RUN_ID" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" > handoff-state.txt
-          sleep 20
-          echo "MOTOR_STAGE=$next PASS"
+          echo "START=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "WORK_MINUTES=$WORK_MINUTES"
+          echo "CPU=$(nproc)"
+          free -h
+          df -h / | tail -n 1
+
+          echo "Running for ${WORK_MINUTES} minutes before handoff..."
+          for ((minute=1; minute<=WORK_MINUTES; minute++)); do
+            sleep 60
+            if (( minute % 30 == 0 )); then
+              echo "PROGRESS minute=$minute/${WORK_MINUTES} utc=$(date -u '+%Y-%m-%d %H:%M:%S')"
+            fi
+          done
+
+          NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          printf 'handoff_count=%s\nlast_stage=%s\nlast_run=%s\nlast_time=%s\n' "$count" "$next" "$GITHUB_RUN_ID" "$NOW" > handoff-state.txt
+          echo "HANDOFF_TEST=CHECKPOINT"
+          echo "MOTOR_STAGE=$next"
+          echo "CHECKPOINT_TIME=$NOW"
 
       - name: Persist state
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add handoff-state.txt
-          git commit -m "Persist handoff motor state" || exit 0
+          git commit -m "Long-run handoff checkpoint"
           git push
+
+      - name: Queue next handoff run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run handoff-motor.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "HANDOFF_TEST=NEXT_RUN_QUEUED"
+          echo "CURRENT_RUN=$GITHUB_RUN_ID"
+          echo "NEXT_RUN_WILL_CONTINUE_FROM_STATE=YES"
