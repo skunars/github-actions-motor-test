@@ -1,0 +1,1 @@
+Secure runtime plan: encrypted payload, secret-held private key, no production checkout, checkpoint handoff, and continuous scanning.
