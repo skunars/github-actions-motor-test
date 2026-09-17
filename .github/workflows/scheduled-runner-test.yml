@@ -1,8 +1,7 @@
 name: Scheduled Runner Test
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,10 +13,10 @@ jobs:
     steps:
       - name: Verify public runner
         run: |
-          echo "SCHEDULE_TEST=START"
+          echo "RUNNER_TEST=START"
           echo "UTC: $(date -u)"
           echo "CPU: $(nproc)"
           free -h
           df -h / | tail -n 1
           sleep 60
-          echo "SCHEDULE_TEST=PASS"
+          echo "RUNNER_TEST=PASS"
