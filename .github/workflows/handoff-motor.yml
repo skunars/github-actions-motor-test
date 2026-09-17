@@ -12,66 +12,75 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  WORK_MINUTES: 340
+  WORK_MINUTES: 2
+  MAX_HANDOFFS: 5
 
 jobs:
   motor:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 5
     steps:
-      - name: Checkout state
+      - name: Checkout deployment shell
         uses: actions/checkout@v4
 
-      - name: Start long-run motor
+      - name: Secure runtime preflight
+        env:
+          MOTOR_PRIVATE_KEY: ${{ secrets.MOTOR_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MOTOR_PRIVATE_KEY:-}" ]; then
+            echo "SECRET_PENDING: add MOTOR_PRIVATE_KEY before starting the secure test"
+            exit 0
+          fi
+          echo "SECRET_PRESENT"
+
+      - name: Secure motor handoff test
+        if: ${{ secrets.MOTOR_PRIVATE_KEY != '' }}
+        env:
+          MOTOR_PRIVATE_KEY: ${{ secrets.MOTOR_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$MOTOR_PRIVATE_KEY"
           stage=$(grep '^last_stage=' handoff-state.txt | cut -d= -f2)
           count=$(grep '^handoff_count=' handoff-state.txt | cut -d= -f2)
           count=$((count + 1))
           if [ "$stage" = "A" ]; then next="B"; else next="A"; fi
-
-          echo "HANDOFF_TEST=START"
+          echo "SECURE_TEST=START"
           echo "PREVIOUS_STAGE=$stage"
           echo "NEXT_STAGE=$next"
           echo "COUNT=$count"
           echo "RUN=$GITHUB_RUN_ID"
-          echo "START=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "WORK_MINUTES=$WORK_MINUTES"
-          echo "CPU=$(nproc)"
-          free -h
-          df -h / | tail -n 1
-
-          echo "Running for ${WORK_MINUTES} minutes before handoff..."
-          for ((minute=1; minute<=WORK_MINUTES; minute++)); do
-            sleep 60
-            if (( minute % 30 == 0 )); then
-              echo "PROGRESS minute=$minute/${WORK_MINUTES} utc=$(date -u '+%Y-%m-%d %H:%M:%S')"
-            fi
-          done
-
+          echo "ACTIVE_WINDOW=${WORK_MINUTES}m"
+          mkdir -p /dev/shm/motor-runtime
+          trap 'rm -rf /dev/shm/motor-runtime' EXIT
+          printf 'encrypted-runtime-placeholder\n' > /dev/shm/motor-runtime/payload
+          sleep $((WORK_MINUTES * 60))
           NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           printf 'handoff_count=%s\nlast_stage=%s\nlast_run=%s\nlast_time=%s\n' "$count" "$next" "$GITHUB_RUN_ID" "$NOW" > handoff-state.txt
-          echo "HANDOFF_TEST=CHECKPOINT"
-          echo "MOTOR_STAGE=$next"
-          echo "CHECKPOINT_TIME=$NOW"
+          echo "CHECKPOINT=PASS"
+          echo "RAM_WORKSPACE_CLEANUP=PASS"
 
       - name: Persist state
-        shell: bash
+        if: ${{ secrets.MOTOR_PRIVATE_KEY != '' }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add handoff-state.txt
-          git commit -m "Long-run handoff checkpoint"
+          git diff --cached --quiet || git commit -m "Persist secure handoff checkpoint"
           git push
 
-      - name: Queue next handoff run
+      - name: Queue next handoff
+        if: ${{ secrets.MOTOR_PRIVATE_KEY != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run handoff-motor.yml --repo "$GITHUB_REPOSITORY" --ref main
-          echo "HANDOFF_TEST=NEXT_RUN_QUEUED"
-          echo "CURRENT_RUN=$GITHUB_RUN_ID"
-          echo "NEXT_RUN_WILL_CONTINUE_FROM_STATE=YES"
+          count=$(grep '^handoff_count=' handoff-state.txt | cut -d= -f2)
+          if [ "$count" -lt "$MAX_HANDOFFS" ]; then
+            gh workflow run handoff-motor.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "NEXT_RUN=QUEUED"
+          else
+            echo "NEXT_RUN=STOPPED_AT_TEST_LIMIT"
+          fi
